@@ -327,7 +327,23 @@ function renderData(){
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-primary" id="importBtn"><i class="ti ti-upload"></i> Import data</button>
     </div>
-  </div>`;
+  <div class="export-box">
+  <h3>Import from Anki</h3>
+  <p>
+    Export your Anki deck as a CSV file with:
+    <br><strong>Front,Back</strong>
+  </p>
+
+  <input type="file" id="ankiFileInput" accept=".csv,.txt">
+
+  <div style="display:flex;gap:8px;margin-top:10px">
+    <button class="btn btn-primary" id="importAnkiBtn">
+      <i class="ti ti-file-import"></i> Import Anki CSV
+    </button>
+  </div>
+
+  <div id="ankiImportStatus" style="margin-top:10px;font-size:13px;color:var(--text2)"></div>
+</div></div>`;
 }
 function renderModal(){
   if(state.modal==='addDeck')return`<div class="modal-overlay" id="modalOverlay"><div class="modal">
@@ -438,6 +454,84 @@ function attachEvents(){
       state.decks=data.decks;state.cards=data.cards;save();state.view='home';render();showToast('Imported!');
     }catch(e){errEl.textContent='Invalid JSON.';}
   });
+```js
+const importAnkiBtn=document.getElementById('importAnkiBtn');
+
+if(importAnkiBtn){
+  importAnkiBtn.addEventListener('click', async ()=>{
+    const fileInput=document.getElementById('ankiFileInput');
+    const status=document.getElementById('ankiImportStatus');
+
+    if(!fileInput.files.length){
+      status.textContent='Choose a CSV file first.';
+      return;
+    }
+
+    const file=fileInput.files[0];
+    const text=await file.text();
+
+    try{
+      const lines=text.split(/\r?\n/).filter(l=>l.trim());
+
+      if(lines.length===0){
+        status.textContent='File is empty.';
+        return;
+      }
+
+      let deckName=prompt(
+        'Enter a deck name for imported cards:',
+        'Imported Anki Deck'
+      );
+
+      if(!deckName) return;
+
+      const deckId=crypto.randomUUID();
+
+      state.decks.push({
+        id:deckId,
+        name:deckName,
+        created:Date.now()
+      });
+
+      let imported=0;
+
+      for(const line of lines){
+        const parts=line.split(',');
+
+        if(parts.length<2) continue;
+
+        const front=parts[0]
+          ?.replace(/^\"|\"$/g,'')
+          .trim();
+
+        const back=parts
+          .slice(1)
+          .join(',')
+          .replace(/^\"|\"$/g,'')
+          .trim();
+
+        if(!front || !back) continue;
+
+        state.cards.push(
+          newCard(front,back,deckId)
+        );
+
+        imported++;
+      }
+
+      save();
+      render();
+
+      showToast(`Imported ${imported} cards!`);
+
+    }catch(err){
+      status.textContent='Failed to import file.';
+      console.error(err);
+    }
+  });
+}
+```
+
 }
 load();render();
 </script>
