@@ -344,11 +344,114 @@ function renderData(){
   </div>
 
   <div id="ankiImportStatus" style="margin-top:10px;font-size:13px;color:var(--text2)"></div>
-</div></div>`;
+</div>`;
 }
 function renderModal(){
   if(state.modal==='addDeck')return`<div class="modal-overlay" id="modalOverlay"><div class="modal">
-@@ -438,6 +454,84 @@
+    <div class="modal-title">New deck</div>
+    <div class="form-group"><label class="form-label">Deck name</label><input class="form-input" id="deckNameInput" placeholder="e.g. Spanish vocabulary"></div>
+    <div class="btn-row"><button class="btn btn-secondary" id="cancelModal">Cancel</button><button class="btn btn-primary" id="confirmAddDeck">Create deck</button></div>
+  </div></div>`;
+  if(state.modal==='addCard'){
+    const deck=state.decks.find(d=>d.id===state.activeDeckId);
+    return`<div class="modal-overlay" id="modalOverlay"><div class="modal">
+      <div class="modal-title">Add card to "${esc(deck?.name||'')}"</div>
+      <div class="form-group"><label class="form-label">Front (question)</label><textarea class="form-textarea" id="cardFront"></textarea></div>
+      <div class="form-group"><label class="form-label">Back (answer)</label><textarea class="form-textarea" id="cardBack"></textarea></div>
+      <div class="btn-row"><button class="btn btn-secondary" id="cancelModal">Cancel</button><button class="btn btn-primary" id="confirmAddCard">Add card</button></div>
+    </div></div>`;
+  }
+  if(state.modal==='editCard'){
+    const card=state.cards.find(c=>c.id===state.editCardId);
+    return`<div class="modal-overlay" id="modalOverlay"><div class="modal">
+      <div class="modal-title">Edit card</div>
+      <div class="form-group"><label class="form-label">Front (question)</label><textarea class="form-textarea" id="cardFront">${esc(card?.front||'')}</textarea></div>
+      <div class="form-group"><label class="form-label">Back (answer)</label><textarea class="form-textarea" id="cardBack">${esc(card?.back||'')}</textarea></div>
+      <div class="btn-row"><button class="btn btn-secondary" id="cancelModal">Cancel</button><button class="btn btn-primary" id="confirmEditCard">Save changes</button></div>
+    </div></div>`;
+  }
+  return'';
+}
+function attachEvents(){
+  document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>{
+    const v=el.dataset.nav;state.view=v;
+    if(v==='home'){state.studyStarted=false;state.activeDeckId=null;}render();
+  }));
+  document.querySelectorAll('[data-study]').forEach(el=>el.addEventListener('click',e=>{
+    if(e.target.closest('[data-browse],[data-del-deck]'))return;
+    state.activeDeckId=el.dataset.study;state.view='study';state.studyStarted=false;render();
+  }));
+  const startBtn=document.getElementById('startStudyBtn');
+  if(startBtn)startBtn.addEventListener('click',()=>{
+    state.studyQueue=buildStudyQueue(state.activeDeckId);state.studyIdx=0;state.showAnswer=false;state.studyStarted=true;render();
+  });
+  const flip=document.querySelector('[data-flip]');
+  if(flip)flip.addEventListener('click',()=>{state.showAnswer=true;render();});
+  const showBtn=document.getElementById('showAnswerBtn');
+  if(showBtn)showBtn.addEventListener('click',()=>{state.showAnswer=true;render();});
+  document.querySelectorAll('[data-rate]').forEach(el=>el.addEventListener('click',()=>{
+    const rating=parseInt(el.dataset.rate),card=state.studyQueue[state.studyIdx],updated=sm2(card,rating);
+    const idx=state.cards.findIndex(c=>c.id===card.id);if(idx>=0)state.cards[idx]=updated;
+    state.studyQueue[state.studyIdx]=updated;
+    if(rating===0)state.studyQueue.push({...updated,due:Date.now()-1000,reps:0,interval:1});
+    state.studyIdx++;state.showAnswer=false;save();render();
+  }));
+  document.querySelectorAll('[data-browse]').forEach(el=>el.addEventListener('click',e=>{
+    e.stopPropagation();state.activeDeckId=el.dataset.browse;state.view='browse';render();
+  }));
+  document.querySelectorAll('[data-del-deck]').forEach(el=>el.addEventListener('click',e=>{
+    e.stopPropagation();if(!confirm('Delete this deck and all its cards?'))return;
+    const id=el.dataset.delDeck;state.decks=state.decks.filter(d=>d.id!==id);state.cards=state.cards.filter(c=>c.deckId!==id);save();render();
+  }));
+  document.querySelectorAll('[data-add-card]').forEach(el=>el.addEventListener('click',()=>{state.activeDeckId=el.dataset.addCard;state.modal='addCard';render();}));
+  document.querySelectorAll('[data-edit-card]').forEach(el=>el.addEventListener('click',()=>{state.editCardId=el.dataset.editCard;state.modal='editCard';render();}));
+  document.querySelectorAll('[data-del-card]').forEach(el=>el.addEventListener('click',()=>{
+    if(!confirm('Delete this card?'))return;state.cards=state.cards.filter(c=>c.id!==el.dataset.delCard);save();render();
+  }));
+  const cancelModal=document.getElementById('cancelModal');
+  if(cancelModal)cancelModal.addEventListener('click',()=>{state.modal=null;render();});
+  const overlay=document.getElementById('modalOverlay');
+  if(overlay)overlay.addEventListener('click',e=>{if(e.target===overlay){state.modal=null;render();}});
+  const confirmDeck=document.getElementById('confirmAddDeck');
+  if(confirmDeck)confirmDeck.addEventListener('click',()=>{
+    const name=document.getElementById('deckNameInput')?.value?.trim();if(!name)return;
+    state.decks.push({id:crypto.randomUUID(),name,created:Date.now()});state.modal=null;save();render();showToast('Deck created!');
+  });
+  const deckInput=document.getElementById('deckNameInput');
+  if(deckInput){deckInput.focus();deckInput.addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('confirmAddDeck')?.click();});}
+  const confirmCard=document.getElementById('confirmAddCard');
+  if(confirmCard)confirmCard.addEventListener('click',()=>{
+    const front=document.getElementById('cardFront')?.value?.trim(),back=document.getElementById('cardBack')?.value?.trim();if(!front||!back)return;
+    state.cards.push(newCard(front,back,state.activeDeckId));state.modal=null;save();render();showToast('Card added!');
+  });
+  const confirmEdit=document.getElementById('confirmEditCard');
+  if(confirmEdit)confirmEdit.addEventListener('click',()=>{
+    const front=document.getElementById('cardFront')?.value?.trim(),back=document.getElementById('cardBack')?.value?.trim();if(!front||!back)return;
+    const idx=state.cards.findIndex(c=>c.id===state.editCardId);if(idx>=0){state.cards[idx].front=front;state.cards[idx].back=back;}
+    state.modal=null;save();render();showToast('Card updated!');
+  });
+  const copyBtn=document.getElementById('copyExportBtn');
+  if(copyBtn)copyBtn.addEventListener('click',()=>{
+    const area=document.getElementById('exportArea');area.select();
+    navigator.clipboard.writeText(area.value).then(()=>showToast('Copied!')).catch(()=>{document.execCommand('copy');showToast('Copied!');});
+  });
+  const dlBtn=document.getElementById('downloadBtn');
+  if(dlBtn)dlBtn.addEventListener('click',()=>{
+    const json=JSON.stringify({decks:state.decks,cards:state.cards},null,2);
+    const blob=new Blob([json],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='flashcards-backup.json';a.click();
+    URL.revokeObjectURL(url);showToast('Downloaded!');
+  });
+  const importBtn=document.getElementById('importBtn');
+  if(importBtn)importBtn.addEventListener('click',()=>{
+    const text=document.getElementById('importArea')?.value?.trim();
+    const errEl=document.getElementById('importError');
+    if(!text){errEl.textContent='Paste your JSON first.';return;}
+    try{
+      const data=JSON.parse(text);
+      if(!data.decks||!data.cards){errEl.textContent='Invalid format.';return;}
+      if(!confirm(`Replace all data with ${data.decks.length} deck(s) and ${data.cards.length} card(s)?`))return;
       state.decks=data.decks;state.cards=data.cards;save();state.view='home';render();showToast('Imported!');
     }catch(e){errEl.textContent='Invalid JSON.';}
   });
@@ -428,8 +531,7 @@ if(importAnkiBtn){
     }
   });
 }
-```
-
-}
 load();render();
 </script>
+</body>
+</html>
